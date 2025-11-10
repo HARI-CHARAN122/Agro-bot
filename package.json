@@ -1,0 +1,28 @@
+{
+  "name": "agrobot",
+  "version": "1.0.0",
+  "description": "AI Farming Assistant with React frontend and Flask backend",
+  "scripts": {
+    "setup": "npm run setup:frontend && npm run setup:backend",
+    "setup:frontend": "cd frontend && npm install",
+    "setup:backend": "pip install -r requirements.txt",
+    "start": "concurrently --names \"BACKEND,FRONTEND\" --prefix-colors \"bgBlue.bold,bgGreen.bold\" \"cd backend && python backend_api.py\" \"cd frontend && npm run dev\"",
+    "dev": "npm run start",
+    "backend": "cd backend && python backend_api.py",
+    "frontend": "cd frontend && npm run dev",
+    "build": "cd frontend && npm run build",
+    "check": "python scripts/check_setup.py"
+  },
+  "keywords": [
+    "agriculture",
+    "ai",
+    "farming",
+    "react",
+    "flask"
+  ],
+  "author": "AgroBot Team",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
