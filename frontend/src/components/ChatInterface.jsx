@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { FaMicrophone, FaStop, FaPaperPlane, FaImage, FaVolumeUp, FaArrowLeft, FaGlobe, FaPause, FaPlay } from 'react-icons/fa'
+import { FaMicrophone, FaStop, FaPaperPlane, FaImage, FaVolumeUp, FaArrowLeft, FaGlobe, FaPause, FaPlay, FaCloudSun, FaLocationArrow } from 'react-icons/fa'
 import { motion, AnimatePresence } from 'framer-motion'
 import axios from 'axios'
 
@@ -20,6 +20,8 @@ const ChatInterface = ({ language, setLanguage, onBackToHome }) => {
   const [error, setError] = useState('')
   const [playingAudioId, setPlayingAudioId] = useState(null)
   const [isPaused, setIsPaused] = useState(false)
+  const [weatherContext, setWeatherContext] = useState(null)
+  const [isFetchingWeather, setIsFetchingWeather] = useState(false)
   
   const messagesEndRef = useRef(null)
   const mediaRecorderRef = useRef(null)
@@ -69,7 +71,12 @@ const ChatInterface = ({ language, setLanguage, onBackToHome }) => {
 
     try {
       // Get AI response
-      const chatRes = await axios.post('/api/chat', { message: userMessage })
+      const payload = { message: userMessage }
+      if (weatherContext?.context) {
+        payload.weatherContext = weatherContext.context
+      }
+
+      const chatRes = await axios.post('/api/chat', payload)
       const aiResponse = chatRes.data.response
 
       // Get TTS and translated text
@@ -80,7 +87,8 @@ const ChatInterface = ({ language, setLanguage, onBackToHome }) => {
 
       const translatedText = ttsRes.data.translated_text || aiResponse
       const audioBase64 = ttsRes.data.audio
-      const audioUrl = `data:audio/mp3;base64,${audioBase64}`
+      const format = ttsRes.data.format || 'mp3'
+      const audioUrl = audioBase64 ? `data:audio/${format};base64,${audioBase64}` : null
 
       // Add bot message with audio but NO auto-play for text input
       addMessage({ text: translatedText, audio: audioUrl, autoPlay: false }, 'text', 'bot')
@@ -158,7 +166,12 @@ const ChatInterface = ({ language, setLanguage, onBackToHome }) => {
       addMessage(transcription, 'voice', 'user')
 
       // Get AI response
-      const chatRes = await axios.post('/api/chat', { message: transcription })
+      const payload = { message: transcription }
+      if (weatherContext?.context) {
+        payload.weatherContext = weatherContext.context
+      }
+
+      const chatRes = await axios.post('/api/chat', payload)
       const aiResponse = chatRes.data.response
 
       // Get TTS
@@ -168,8 +181,9 @@ const ChatInterface = ({ language, setLanguage, onBackToHome }) => {
       })
 
       const translatedText = ttsRes.data.translated_text || aiResponse
-      const audioBase64 = ttsRes.data.audio
-      const audioUrl = `data:audio/mp3;base64,${audioBase64}`
+        const audioBase64 = ttsRes.data.audio
+        const format = ttsRes.data.format || 'mp3'
+        const audioUrl = audioBase64 ? `data:audio/${format};base64,${audioBase64}` : null
 
       // Add bot message with audio
       const messageId = addMessage({ text: translatedText, audio: audioUrl, autoPlay: true }, 'voice', 'bot')
@@ -212,8 +226,9 @@ const ChatInterface = ({ language, setLanguage, onBackToHome }) => {
       })
 
       const translatedText = ttsRes.data.translated_text || result
-      const audioBase64 = ttsRes.data.audio
-      const audioUrl = `data:audio/mp3;base64,${audioBase64}`
+        const audioBase64 = ttsRes.data.audio
+        const format = ttsRes.data.format || 'mp3'
+        const audioUrl = audioBase64 ? `data:audio/${format};base64,${audioBase64}` : null
 
       addMessage({ text: translatedText, audio: audioUrl }, 'image', 'bot')
     } catch (err) {
@@ -234,6 +249,24 @@ const ChatInterface = ({ language, setLanguage, onBackToHome }) => {
       setIsPaused(false)
     }
 
+    // If no audio URL, fall back to browser SpeechSynthesis
+    if (!audioUrl) {
+      const msg = messages.find(m => m.id === messageId)
+      const textToSpeak = msg?.content?.text || msg?.content || ''
+      if (textToSpeak) {
+        try {
+          window.speechSynthesis.cancel()
+          const utter = new SpeechSynthesisUtterance(textToSpeak)
+          utter.lang = language || 'en'
+          window.speechSynthesis.speak(utter)
+          setPlayingAudioId(messageId)
+        } catch (err) {
+          console.error('SpeechSynthesis failed:', err)
+        }
+      }
+      return
+    }
+
     // Create and play new audio
     const audio = new Audio(audioUrl)
     currentAudioRef.current = audio
@@ -247,11 +280,26 @@ const ChatInterface = ({ language, setLanguage, onBackToHome }) => {
       setIsPaused(false)
     }
     
-    // Clear reference if audio fails
+    // Clear reference if audio fails and fallback to SpeechSynthesis
     audio.onerror = () => {
+      console.error('Audio failed to load/play, falling back to SpeechSynthesis')
       currentAudioRef.current = null
       setPlayingAudioId(null)
       setIsPaused(false)
+      // Fallback: speak the text via browser TTS
+      const msg = messages.find(m => m.id === messageId)
+      const textToSpeak = msg?.content?.text || msg?.content || ''
+      if (textToSpeak) {
+        try {
+          window.speechSynthesis.cancel()
+          const utter = new SpeechSynthesisUtterance(textToSpeak)
+          utter.lang = language || 'en'
+          window.speechSynthesis.speak(utter)
+          setPlayingAudioId(messageId)
+        } catch (err) {
+          console.error('SpeechSynthesis fallback failed:', err)
+        }
+      }
     }
     
     audio.play().catch(err => {
@@ -294,6 +342,51 @@ const ChatInterface = ({ language, setLanguage, onBackToHome }) => {
     }
   }
 
+  const buildWeatherMessage = (data) => {
+    if (!data?.details) return ''
+    const { details, context } = data
+    return `Weather synced for ${details.location}: ${details.temperature}°C, humidity ${details.humidity}%, wind ${details.wind_speed} km/h.\n${context}`
+  }
+
+  const handleWeatherFetch = () => {
+    if (isFetchingWeather) return
+    if (!navigator.geolocation) {
+      setError('Geolocation is not supported in this browser.')
+      return
+    }
+
+    setIsFetchingWeather(true)
+    setError('')
+
+    navigator.geolocation.getCurrentPosition(async ({ coords }) => {
+      try {
+        const { latitude, longitude } = coords
+        const res = await axios.get('/api/weather', {
+          params: { lat: latitude, lon: longitude }
+        })
+        setWeatherContext(res.data)
+        addMessage({ text: buildWeatherMessage(res.data) }, 'text', 'bot')
+      } catch (err) {
+        console.error('Weather fetch failed:', err)
+        setError('Failed to fetch local weather. Please try again.')
+      } finally {
+        setIsFetchingWeather(false)
+      }
+    }, (geoError) => {
+      console.error('Geolocation error:', geoError)
+      setError('Location permission denied. Cannot fetch weather context.')
+      setIsFetchingWeather(false)
+    }, {
+      enableHighAccuracy: true,
+      timeout: 8000
+    })
+  }
+
+  const clearWeatherContext = () => {
+    setWeatherContext(null)
+    addMessage({ text: 'Weather context removed. Responses will use general guidance.' }, 'text', 'bot')
+  }
+
   return (
     <div className="flex flex-col h-[calc(100vh-200px)] max-w-5xl mx-auto">
       {/* Back Button Header */}
@@ -319,6 +412,30 @@ const ChatInterface = ({ language, setLanguage, onBackToHome }) => {
           <span className="text-sm text-gray-600">AgroBot Online</span>
         </div>
       </div>
+
+      {/* Weather Snapshot */}
+      {weatherContext && (
+        <div className="mx-6 mt-4 bg-white border border-primary-100 rounded-2xl shadow-sm p-4 flex items-start space-x-4">
+          <div className="flex-shrink-0">
+            <FaCloudSun className="text-primary-500 text-2xl" />
+          </div>
+          <div className="flex-1">
+            <div className="flex items-center justify-between">
+              <p className="font-semibold text-gray-800">Local field snapshot</p>
+              <button
+                onClick={clearWeatherContext}
+                className="text-xs text-gray-500 hover:text-red-500 transition-colors"
+              >
+                Clear
+              </button>
+            </div>
+            <p className="text-sm text-gray-600 mt-1">
+              {weatherContext.details?.location} • {weatherContext.details?.temperature}°C • Humidity {weatherContext.details?.humidity}% • Wind {weatherContext.details?.wind_speed} km/h
+            </p>
+            <p className="text-sm text-gray-700 mt-2 whitespace-pre-wrap">{weatherContext.context}</p>
+          </div>
+        </div>
+      )}
 
       {/* Chat Messages Area */}
       <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gradient-to-b from-primary-50/30 to-white">
@@ -448,6 +565,22 @@ const ChatInterface = ({ language, setLanguage, onBackToHome }) => {
             </select>
             <FaGlobe className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 pointer-events-none" size={16} />
           </div>
+
+          {/* Weather Button */}
+          <button
+            onClick={handleWeatherFetch}
+            disabled={isProcessing || isFetchingWeather}
+            className={`p-3 rounded-xl flex items-center space-x-2 ${
+              isFetchingWeather
+                ? 'bg-primary-100 text-primary-700'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            } transition-all`}
+          >
+            <FaLocationArrow size={16} />
+            <span className="text-xs font-semibold">
+              {isFetchingWeather ? 'Syncing...' : 'Local weather'}
+            </span>
+          </button>
 
           {/* Voice Button */}
           <button

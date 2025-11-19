@@ -11,6 +11,7 @@ from flask_cors import CORS
 from agrobot_chat import get_agro_response
 from tts_engine import text_to_speech
 from universal_stt import transcribe_audio_groq
+from weather_service import fetch_weather_summary, WeatherServiceError
 import google.generativeai as genai
 from PIL import Image
 import tempfile
@@ -41,6 +42,7 @@ CORS(app)  # Enable CORS for React frontend
 # Configure Gemini
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY")
 
 if GOOGLE_API_KEY:
     genai.configure(api_key=GOOGLE_API_KEY)
@@ -62,7 +64,8 @@ def chat():
         if not user_message:
             return jsonify({"error": "Message is required"}), 400
         
-        response = get_agro_response(user_message)
+        weather_context = data.get('weatherContext')
+        response = get_agro_response(user_message, weather_context=weather_context)
         
         # Debug: Check what language the AI is responding in
         safe_print(f"[CHAT] User message: {user_message[:50]}...")
@@ -72,6 +75,36 @@ def chat():
     
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+# -------------------------------------------------------
+# 🌦 WEATHER SNAPSHOT ENDPOINT
+# -------------------------------------------------------
+@app.route('/api/weather', methods=['GET'])
+def weather():
+    """
+    Fetch localized weather/soil conditions using OpenWeather.
+    Query params:
+      - lat & lon (preferred)
+      - or city (fallback)
+    """
+    try:
+        lat = request.args.get('lat')
+        lon = request.args.get('lon')
+        city = request.args.get('city')
+
+        if not (lat and lon) and not city:
+            return jsonify({"error": "Provide latitude/longitude or a city name"}), 400
+
+        summary = fetch_weather_summary(lat=lat, lon=lon, city=city)
+        safe_print(f"[WEATHER] Context ready for {summary['details']['location']}")
+        return jsonify(summary)
+
+    except WeatherServiceError as exc:
+        safe_print(f"[WEATHER ERROR] {str(exc)}")
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        safe_print(f"[WEATHER ERROR] Unexpected failure: {str(exc)}")
+        return jsonify({"error": "Failed to fetch weather data"}), 500
 
 
 # -------------------------------------------------------

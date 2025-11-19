@@ -31,11 +31,20 @@ Remember: Your response must be in ENGLISH. The translation to other languages w
 
 
 
-def get_agro_response(user_input: str) -> str:
+def get_agro_response(user_input: str, weather_context: str | None = None) -> str:
     """
     Takes user query as input, returns agriculture advice text.
     """
-    prompt = f"{system_prompt}\n\nUser question: {user_input}"
+    enriched_prompt = system_prompt
+
+    if weather_context:
+        enriched_prompt += (
+            "\nYou also have the latest field context below. Use it to tailor your response:\n"
+            f"{weather_context}\n"
+            "Mention any actionable steps that match these conditions."
+        )
+
+    prompt = f"{enriched_prompt}\n\nUser question: {user_input}"
 
     if not user_input.strip():
         return "Please enter a valid question."

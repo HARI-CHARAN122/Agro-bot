@@ -48,6 +48,11 @@
 - Treatment recommendations included
 - Visual feedback with image preview
 
+#### 🌦️ **Weather-aware Guidance**
+- Optional “Local weather” button fetches live conditions via OpenWeather
+- AgroBot blends temperature, humidity, wind, and rain signals into its prompt
+- Advice dynamically adapts (irrigation, disease pressure, wind protection tips)
+
 #### 🌐 **Modern UI/UX**
 - **Landing page** with hero section and features
 - Gemini-style **bottom toolbar** with all tools
@@ -111,6 +116,8 @@ Edit `.env` and add your API keys:
 ```env
 GOOGLE_API_KEY=your_google_api_key_here
 GROQ_API_KEY=your_groq_api_key_here
+# Optional but recommended for weather-aware tips
+OPENWEATHER_API_KEY=your_openweather_api_key_here
 ```
 
 #### 2️⃣ Install Dependencies
@@ -155,6 +162,25 @@ Frontend will run on `http://localhost:3000`
 #### 4️⃣ Open in Browser
 
 Navigate to **http://localhost:3000** and start using AgroBot! 🎉
+
+#### ✅ Local Run Verification (Nov 17 2025)
+
+The latest local dry-run followed these exact steps:
+
+1. `npm run setup` — installed the root, frontend, and Python dependencies in one go.
+2. `npm start` — launched Flask + Vite together. Since port 3000 was already taken, Vite automatically served the UI at `http://localhost:3001/` (this happens automatically when the default port is busy).
+3. `curl http://localhost:5000/api/health` — confirmed the Flask backend was healthy and responding.
+4. Opened `http://localhost:3001/` — interacted with the React UI, which continued to proxy API calls to `http://localhost:5000`.
+
+If you prefer separate terminals, you can still run `npm run backend` and `npm run frontend`, but the one-command workflow above mirrors the verified setup.
+
+#### 🌦️ Local Weather Snapshot
+
+1. Generate an API key at [OpenWeather](https://openweathermap.org/api) and add it to `.env`.
+2. Start AgroBot and open the chat screen.
+3. Click **Local weather**. Your browser will ask for location permission.
+4. The latest field context appears at the top of the chat, and every new AI response automatically tailors recommendations using that snapshot.
+5. Click **Clear** on the banner if you want to revert to general advice.
 
 ---
 
